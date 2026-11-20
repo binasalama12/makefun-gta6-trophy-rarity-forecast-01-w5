@@ -108,6 +108,12 @@ def forecast_trophy(series, players_series, checkpoint, horizon_days):
     players_series: [players_tracked, ...] one per history read.
     Returns [q05, q25, q50, q75, q95] in percent.
     """
+    # A missing, negative or non-finite horizon would otherwise crash the
+    # sqrt() spread growth below (or poison the trend step); treat it as a
+    # zero-length horizon so the forecast falls back to the centre plus the
+    # floored spread instead of failing the whole case.
+    if horizon_days is None or not math.isfinite(horizon_days) or horizon_days < 0:
+        horizon_days = 0.0
     if not series:
         centre_logit = logit_of(FALLBACK_RATE)
         spread = FLAT_SPREAD
@@ -183,13 +189,26 @@ def forecast_case(case, name):
 
     checkpoint = parse_time(case["at"])
     horizon_days = case["horizon_minutes"] / 1440.0
-    players_series = [read["players_tracked"] for read in case["history"]]
+    # Tolerate reads that omit players_tracked or carry a null count: such
+    # reads say nothing about whether the page refreshed, so they are left
+    # out of the staleness check instead of crashing the whole case.
+    players_series = [
+        read["players_tracked"]
+        for read in case["history"]
+        if read.get("players_tracked") is not None
+    ]
 
     rows = []
     for index, trophy in enumerate(case["trophies"]):
         series = []
         for read in case["history"]:
-            rate = read["rates"][index]
+            # A trophy can be absent from some reads (short or missing
+            # rates list); skip those reads for this trophy rather than
+            # failing the forecast for every trophy in the case.
+            rates = read.get("rates") or []
+            if index >= len(rates):
+                continue
+            rate = rates[index]
             if rate is not None:
                 series.append((parse_time(read["at"]), rate))
         rows.append(
