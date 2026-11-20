@@ -120,6 +120,10 @@ def forecast_trophy(series, players_series, checkpoint, horizon_days):
     trophy_flat = len(set(rates)) <= 1
 
     if page_stale and trophy_flat:
+        # A trophy everyone already holds cannot dilute: the launch-night
+        # refresh left the 100% rate at 100%.
+        if last_rate >= PCT_MAX:
+            return quantiles_from(logit_of(PCT_MAX), 0.15)
         # The page never refreshed during the whole history: anticipate a
         # refresh before the target, which dilutes every rate.
         centre_logit = logit_of(last_rate * DILUTION_FACTOR)
